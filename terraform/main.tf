@@ -59,7 +59,7 @@ resource "aws_instance" "web" {
               apt-get install -y docker.io docker-compose git
               systemctl start docker
               systemctl enable docker
-              git clone https://github.com/stautisabela/nginx-node-redis.git 
+              git clone https://github.com/stautisabela/nginx-node-redis
               cd nginx-node-redis/
               docker-compose up -d --build
               EOF

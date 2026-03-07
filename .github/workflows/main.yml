@@ -1,4 +1,4 @@
-name: Docker Compose CI
+name: Terraform CI
 
 on:
   push:
@@ -7,30 +7,56 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  terraform:
     runs-on: ubuntu-latest
+  
+    defaults:
+      run:
+        working-directory: terraform
+
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: "eu-west-1"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
 
-      - name: Build and run with Docker Compose
+      - name: Initialize Terraform
+        run: terraform init
+
+      - name: Validate Terraform configuration
+        run: terraform validate
+
+      - name: Plan Terraform changes
+        run: terraform plan -out=tfplan
+
+      - name: Apply Terraform changes
+        run: terraform apply -auto-approve tfplan
+
+      - name: Wait for EC2 instance
         run: |
-          docker compose up -d --build
-          docker compose ps
+          echo "Waiting for EC2 instance to be ready..."
+          sleep 60
 
-      - name: Wait for services
+      - name: Fetch public IP
+        id: ec2_ip
         run: |
-          echo "Waiting for services to start..."
-          sleep 10
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_OUTPUT
 
-      - name: Health check NGINX
+      - name: Health check
+        run: curl -f http://${{ steps.ec2_ip.outputs.public_ip }} || (echo "Instance not responding" && exit 1)
+
+      - name: Keep instance running
         run: |
-          curl -f http://localhost:80 || (docker compose logs && exit 1)
+          echo "Instance running for 5 minutes at: ${{ steps.ec2_ip.outputs.public_ip }}"
+          sleep 300
 
-      - name: Shut down
+      - name: Destroy Terraform resources
         if: always()
-        run: docker compose down
+        run: terraform destroy -auto-approve
